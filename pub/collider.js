@@ -2544,11 +2544,10 @@ class Pipeline extends LabFrame {
         canvas.style.visibility = 'hidden'
     }
 
-    includeCanvas(canvas, ctx) {
-        ctx = ctx || canvas.activeContext
-        // this.defaultCanvasSetup(canvas)
+    includeCanvas(canvas) {
         this.canvas.attach(canvas)
-        this.context.attach(ctx)
+        this.context.attach(canvas.activeContext)
+        this.adjustView()
     }
 
     countCanvas2D() {
@@ -2564,10 +2563,10 @@ class Pipeline extends LabFrame {
         for (let canvas of this.canvas._ls) {
             if (canvas.adjust) {
                 canvas.adjust()
-                complementContext(canvas.activeContext)
             }
+            complementContext(canvas.activeContext)
         }
-        complementLab(mix)
+        complementLabs(mix)
         mix.signal('resize')
     }
 
@@ -2638,7 +2637,7 @@ class Pipeline extends LabFrame {
         return gl
     }
 
-    // setup main WebGL canvas
+    // setup main visible WebGL canvas
     bindOrCreateCanvas3D() {
         const mix = this.mix
 
@@ -2651,7 +2650,6 @@ class Pipeline extends LabFrame {
             glCanvas.name = glCanvas.id
 
             this.attachCanvasToRenderingSurface(glCanvas, 5)
-            
         }
 
         glCanvas.__$ = mix
@@ -2659,7 +2657,32 @@ class Pipeline extends LabFrame {
         mix.glCanvas = glCanvas
         mix.gl = this.getWebGLContext(glCanvas)
 
-        this.includeCanvas(mix.glCanvas, mix.gl)
+        this.includeCanvas(mix.glCanvas)
+    }
+
+    createCanvasBufferGL() {
+        const glCanvas = document.createElement('canvas')
+
+        this.defaultCanvasTraits(glCanvas)
+        glCanvas.id = glCanvas.name = 'gl-canvas-' + (_.sys.pipeline.countCanvasGL() + 1)
+        glCanvas.buffer = true
+        this.getWebGLContext(glCanvas)
+
+        this.includeCanvas(glCanvas)
+        return glCanvas
+    }
+
+    createFullscreenCanvasBufferGL() {
+        const glCanvas = document.createElement('canvas')
+
+        this.defaultCanvasTraits(glCanvas)
+        glCanvas.id = glCanvas.name = 'gl-canvas-' + (_.sys.pipeline.countCanvasGL() + 1)
+        glCanvas.buffer = true
+        this.getWebGLContext(glCanvas)
+        this.defaultCanvasTraits(canvas)
+
+        this.includeCanvas(glCanvas)
+        return glCanvas
     }
 
     get2DContext(canvas) {
@@ -2675,6 +2698,7 @@ class Pipeline extends LabFrame {
         return ctx
     }
 
+    // setup main visible 2D canvas
     bindOrCreateCanvas2D() {
         const mix = this.mix
 
@@ -2683,8 +2707,8 @@ class Pipeline extends LabFrame {
         if (canvas == null) {
             // precreated canvas is not found, so create one
             canvas = document.createElement('canvas')
-            canvas.id = global.canvasName
             this.defaultCanvasTraits(canvas)
+            canvas.id = global.canvasName
             canvas.name = canvas.id
 
             this.attachCanvasToRenderingSurface(canvas, 7)
@@ -2696,7 +2720,30 @@ class Pipeline extends LabFrame {
         mix.ctx = this.get2DContext(canvas)
         mix.defineDrawContext()
 
-        this.includeCanvas(mix.canvas, mix.ctx)
+        this.includeCanvas(mix.canvas)
+    }
+
+    createCanvasBuffer2D() {
+        const canvas = document.createElement('canvas')
+
+        canvas.id = canvas.name = 'canvas-' + (this.countCanvas2D() + 1)
+        canvas.buffer = true // mark buffered by default
+        this.get2DContext(canvas)
+
+        this.includeCanvas(canvas)
+        return canvas
+    }
+
+    createFullscreenCanvasBuffer2D() {
+        const canvas = document.createElement('canvas')
+
+        canvas.id = canvas.name = 'canvas-' + (this.countCanvas2D() + 1)
+        canvas.buffer = true // mark buffered by default
+        this.get2DContext(canvas)
+        this.defaultCanvasTraits(canvas)
+
+        this.includeCanvas(canvas)
+        return canvas
     }
 
     bindOrCreateRenderingSurface() {
@@ -4467,17 +4514,23 @@ const Mod = function(st) {
 
         if (modConfig.buffered2d || modConfig.buffered || name.endsWith('-2d') || name.endsWith('-buf')) {
             _scene.log.sys(`creating a buffered 2D canvas for [${name}]`)
+            canvas = _.sys.pipeline.createCanvasBuffer2D()
+            /*
             canvas = document.createElement('canvas')
             canvas.id = canvas.name = 'canvas-' + (_.sys.pipeline.countCanvas2D() + 1)
             canvas.buffer = true
             ctx = get2DContext(canvas)
+            */
         }
         if (modConfig.bufferedGL || modConfig.buffered || name.endsWith('-gl') || name.endsWith('-buf')) {
             _scene.log.sys(`creating a buffered WebGL canvas for [${name}]`)
+            glCanvas = _.sys.pipeline.createCanvasBufferGL()
+            /*
             glCanvas = document.createElement('canvas')
             glCanvas.id = glCanvas.name = 'gl-canvas-' + (_.sys.pipeline.countCanvasGL() + 1)
             glCanvas.buffer = true
             gl = getWebGLContext(glCanvas)
+            */
         }
 
         const nmod = new Mod( extend({
@@ -4495,12 +4548,12 @@ const Mod = function(st) {
         if (!canvas.__$) {
             canvas.__$   = nmod
             ctx.__$      = nmod
-            nmod._$.sys.pipeline.includeCanvas(canvas, ctx)
+            // nmod._$.sys.pipeline.includeCanvas(canvas)
         }
         if (!glCanvas.__$) {
             glCanvas.__$ = nmod
             gl.__$       = nmod
-            nmod._$.sys.pipeline.includeCanvas(glCanvas, gl)
+            // nmod._$.sys.pipeline.includeCanvas(glCanvas, gl)
         }
 
         return nmod
@@ -4653,14 +4706,26 @@ Mod.prototype.defineDrawContext = function() {
           alt = _.alt
     if (!ctx) return
 
+    _._drawContext = this.createDrawContext(ctx, alt)
+}
+
+Mod.prototype.createDrawContext = function(ctx, alt) {
+    if (!ctx) return
+
+    /*
+    const _   = this,
+          ctx = _.ctx,
+          alt = _.alt
+    if (!ctx) return
+    */
+
     const TAU = Math.PI * 2
     let mode = 0
     let shape = false
     let fontSize
     let fontName
 
-    _._drawContext = {
-
+    const drawContext = {
         // TODO deprecate rx series of functions
         rx:function(x) {
             return ctx.width * x
@@ -5094,8 +5159,8 @@ Mod.prototype.defineDrawContext = function() {
         hsla: hsla,
     }
     // TODO temporary legacy solution - refactor to remove any ctx.draw use
-    ctx.draw = _._drawContext
-    return ctx
+    ctx.draw = drawContext
+    return drawContext
 }
 
 Mod.prototype.populateAlt = function() {
@@ -6764,9 +6829,10 @@ function complementContext(actx) {
     actx.pb = actx.base   / 100
 }
 
-function complementLab(mod) {
+function complementLabs(mod) {
     const lab  = mod.lab,
-          lctx = mod.ctx
+          lctx = mod.ctx || mod.gl
+    if (!lctx) return
 
     lab.width  = lctx.width
     lab.height = lctx.height
@@ -6782,7 +6848,7 @@ function complementLab(mod) {
     lab.py = lctx.py
     lab.pb = lctx.pb
 
-    mod.mod._ls.forEach(m => complementLab(m))
+    mod.mod._ls.forEach(m => complementLabs(m))
 }
 
 function adjustView() {
